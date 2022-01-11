@@ -1,6 +1,17 @@
 import { capFirstLetters } from "./capfirstletter";
 import { MdKeyboardArrowLeft } from "react-icons/md";
-import { query, collection, where, limit, addDoc, serverTimestamp, setDoc, doc, getDoc } from "firebase/firestore";
+import {
+  query,
+  collection,
+  where,
+  limit,
+  addDoc,
+  serverTimestamp,
+  setDoc,
+  doc,
+  getDoc,
+  orderBy,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import { useCollectionData } from "./useCollectionData";
 import { useUser } from "./useUser";
@@ -12,18 +23,22 @@ import { getInitalsImg } from "./getInitialsImg";
 import updateOnlineTime from "../updateonlinetime";
 
 export default function ChatMessages({
-  selectedUser: { firstname, lastname, uid: otherUid, profilepicsrc: otherUserProfilePic, _lastonline },
+  selectedUser: { firstname, lastname, uid: otherUid, profilepicsrc: otherUserProfilePic },
   closeChat,
   wipeSelectedUser,
 }) {
   const { uid, profilepicsrc } = useUser();
-  const isOtherUserOnline = (new Date().getTime() - _lastonline) / 60000 < 5;
   const userInfo = useUser();
   const [messagesFromOtherUser] = useCollectionData(
-    query(collection(db, "usersonline", otherUid, "sentMessages"), where("sentTo", "==", uid), limit(25))
+    query(collection(db, "usersonline", otherUid, "sentMessages"), orderBy("sentTime", "desc"), limit(20))
   );
+  const [otherUserData] = useCollectionData(
+    query(collection(db, "usersonline"), where("uid", "==", otherUid), limit(1))
+  );
+  const _lastonline = otherUserData?.[0]?.data?._lastonline;
+  const isOtherUserOnline = (new Date().getTime() - _lastonline) / 60000 < 5;
   const [messagesFromThisUser] = useCollectionData(
-    query(collection(db, "usersonline", uid, "sentMessages"), where("sentTo", "==", otherUid), limit(25))
+    query(collection(db, "usersonline", uid, "sentMessages"), orderBy("sentTime", "desc"), limit(20))
   );
   const [allMessages, setAllMessages] = useState();
 
@@ -33,13 +48,18 @@ export default function ChatMessages({
   const lastMessageRef = useRef();
 
   useEffect(() => {
+    if (lastMessageRef?.current) lastMessageRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [allMessages]);
+
+  useEffect(() => {
     setAllMessages(
       [
-        ...messagesFromOtherUser.map(el => ({ ...el, isUser: false })),
-        ...messagesFromThisUser.map(el => ({ ...el, isUser: true })),
+        ...messagesFromOtherUser.filter(({ data: { sentTo } }) => sentTo === uid).map(el => ({ ...el, isUser: false })),
+        ...messagesFromThisUser
+          .filter(({ data: { sentTo } }) => sentTo === otherUid)
+          .map(el => ({ ...el, isUser: true })),
       ].sort((a, b) => a?.data?.sentTime?.seconds - b?.data?.sentTime?.seconds)
     );
-    if (lastMessageRef?.current) lastMessageRef.current.scrollIntoView({ behavior: "smooth" });
 
     //update unreadcount
     setDoc(
@@ -53,18 +73,21 @@ export default function ChatMessages({
 
   const userInputRef = useRef();
 
+  useEffect(() => {
+    if (userInputRef?.current) userInputRef?.current.focus();
+  }, []);
+
   const handleSumbit = async e => {
     setLoading(true);
     e.preventDefault();
     const text = userInputRef.current.value;
-
     const data = {
       message: text,
       sentFrom: uid,
       sentTo: otherUid,
       sentTime: serverTimestamp(),
-      unread: 1,
     };
+
     await addDoc(collection(db, "usersonline", uid, "sentMessages"), data);
 
     updateOnlineTime(userInfo);
@@ -174,12 +197,13 @@ export default function ChatMessages({
           <div style={{ fontWeight: "bold", marginLeft: 10 }}>{`Now Chatting with ${capFirstLetters(
             firstname
           )}: `}</div>
+
           {!isOtherUserOnline && (
             <div style={{ fontSize: 12, marginLeft: 8 }}>User is offline - messages will be sent via email</div>
           )}
         </div>
       </div>
-      <ul style={{ padding: 10, width: "100%", height: 275, overflow: "auto" }}>
+      <ul onScroll={e => null} style={{ padding: 10, width: "100%", height: 275, overflow: "auto" }}>
         {!allMessages ? (
           <div>Loading...</div>
         ) : allMessages.length === 0 ? (
