@@ -19,15 +19,29 @@ import { useEffect, useRef, useState } from "react";
 import LoadingSpinner from "./loadingspinner";
 import { MdSend } from "react-icons/md";
 import moment from "moment";
+import { rootserverurl } from "./rooturl";
 import { getInitalsImg } from "./getInitialsImg";
 import updateOnlineTime from "../updateonlinetime";
+import useAxios from "./useAxios";
 
 export default function ChatMessages({
-  selectedUser: { firstname, lastname, uid: otherUid, profilepicsrc: otherUserProfilePic },
+  selectedUser: {
+    firstname: otherUserFirstName,
+    uid: otherUid,
+    profilepicsrc: otherUserProfilePic,
+    email: otherUserEmail,
+  },
   closeChat,
   wipeSelectedUser,
 }) {
-  const { uid, profilepicsrc } = useUser();
+  const {
+    uid,
+    profilepicsrc,
+    firstname: thisUserFirstName,
+    lastname: thisUserLastName,
+    email: thisUserEmail,
+  } = useUser();
+  const axios = useAxios();
   const userInfo = useUser();
   const [messagesFromOtherUser] = useCollectionData(
     query(collection(db, "usersonline", otherUid, "sentMessages"), orderBy("sentTime", "desc"), limit(20))
@@ -77,7 +91,7 @@ export default function ChatMessages({
     if (userInputRef?.current) userInputRef?.current.focus();
   }, []);
 
-  const handleSumbit = async e => {
+  const handleSubmit = async e => {
     setLoading(true);
     e.preventDefault();
     const text = userInputRef.current.value;
@@ -123,6 +137,18 @@ export default function ChatMessages({
         { merge: true }
       );
     }
+
+    if (!isOtherUserOnline) sendEmail(text);
+  };
+
+  const sendEmail = async message => {
+    const res = await axios("POST", `your api for email`, {
+      sender: { fullname: `${thisUserFirstName} ${thisUserLastName}`, email: thisUserEmail },
+      recip: { firstname: otherUserFirstName, email: otherUserEmail },
+      message: message,
+    });
+
+    // console.log(res);
   };
 
   function UserMsg({
@@ -175,7 +201,7 @@ export default function ChatMessages({
             width={40}
             height={40}
             style={{ borderRadius: 50, marginRight: 5 }}
-            src={otherUserProfilePic || getInitalsImg(firstname)}></img>
+            src={otherUserProfilePic || getInitalsImg(otherUserFirstName)}></img>
           <div>{message}</div>
         </div>
         <div style={{ fontSize: 10 }}>{`Sent ${moment(sentTime?.seconds * 1000).fromNow()}`}</div>
@@ -195,7 +221,7 @@ export default function ChatMessages({
         />
         <div>
           <div style={{ fontWeight: "bold", marginLeft: 10 }}>{`Now Chatting with ${capFirstLetters(
-            firstname
+            otherUserFirstName
           )}: `}</div>
 
           {!isOtherUserOnline && (
@@ -220,7 +246,7 @@ export default function ChatMessages({
         <div ref={scrollRef}></div>
       </ul>
 
-      <form onSubmit={handleSumbit}>
+      <form onSubmit={handleSubmit}>
         <div style={{ width: "100%", display: "flex" }}>
           <input
             style={{ marginRight: 10 }}
